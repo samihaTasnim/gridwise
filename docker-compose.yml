@@ -1,0 +1,11 @@
+services:
+  gridwise:
+    build: .
+    image: ghcr.io/<user>/gridwise:1.0.0
+    env_file: .env                 # lives only on the server
+    ports:
+      - "127.0.0.1:8000:8000"      # only Nginx can reach it
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
