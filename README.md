@@ -139,9 +139,11 @@ $ curl -s -X POST http://localhost:8000/optimize-energy -d @case1.json
 Also confirmed: Docker `HEALTHCHECK` reports `healthy`; 2 uvicorn worker processes start;
 container logs contain only method/path/status (no keys, prompts, or bodies); `docker history`
 shows no application secrets baked into any layer; no `.env` present inside the image
-filesystem. Image `gridwise:1.0.0` built with `buildx` default (arm64 on this machine) —
-rebuild with `docker buildx build --platform linux/amd64` before publishing if the judge
-environment is x86_64.
+filesystem.
+
+The published image is built for **linux/amd64** (`docker buildx build --platform linux/amd64`),
+so it runs on a standard x86_64 judge environment, and was smoke-tested with no environment
+variables set: `/health` → `200 {"status":"ok"}`.
 
 ## API
 `GET /health` → `200 {"status":"ok"}`
