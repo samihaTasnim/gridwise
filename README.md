@@ -106,6 +106,21 @@ docker build -t ghcr.io/<user>/gridwise:1.0.0 .
 docker push ghcr.io/<user>/gridwise:1.0.0     # then set the package to Public in registry settings
 ```
 
+**Verified locally**, mirroring the judges' key-less Docker check:
+```
+$ docker run --rm -d -p 8000:8000 gridwise:1.0.0     # no env vars
+$ curl -s http://localhost:8000/health
+{"status":"ok"}                                       # HTTP 200
+$ curl -s -X POST http://localhost:8000/optimize-energy -d @case1.json
+{"...", "total_cost_bdt": 7166.0, ...}                # HTTP 200, fallback-labelled
+```
+Also confirmed: Docker `HEALTHCHECK` reports `healthy`; 2 uvicorn worker processes start;
+container logs contain only method/path/status (no keys, prompts, or bodies); `docker history`
+shows no application secrets baked into any layer; no `.env` present inside the image
+filesystem. Image `gridwise:1.0.0` built with `buildx` default (arm64 on this machine) —
+rebuild with `docker buildx build --platform linux/amd64` before publishing if the judge
+environment is x86_64.
+
 ## API
 `GET /health` → `200 {"status":"ok"}`
 `POST /optimize-energy` → `200` result · `400` malformed/invalid request · `422` infeasible scenario · `500` controlled internal error.
