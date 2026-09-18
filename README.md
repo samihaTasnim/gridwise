@@ -23,8 +23,13 @@ request → schema validation → LLM interpreter → guardrails → LP optimize
 | Replay validator | `app/validator.py` | Hour-by-hour check of balance, solar, battery, directives, neutrality, totals. |
 | Fallback | `app/fallback.py` | Used only if all LLM providers are unreachable; labelled in `explanation`. |
 
-**LLM provider / model:** `<provider>`, `<model-id>` (backup: `<provider>`, `<model-id>`), temperature 0, JSON mode.
-See `05_LLM_PROMPT_AND_TEST_NOTES.md` for how to pick and validate the model against the paraphrase set.
+**LLM provider / model:** Google Gemini, `gemini-3.5-flash-lite` (via the OpenAI-compatible endpoint
+`https://generativelanguage.googleapis.com/v1beta/openai/`), temperature 0, JSON mode.
+Backup provider: `<not yet configured — see Known limitations>`.
+**Model choice note:** the plain `gemini-3.5-flash` (and `gemini-3.6-flash`) variants have
+thinking enabled by default and took 10–17 s for a trivial call in testing here — far past
+the 8 s client timeout. `-flash-lite` responds in ~1–1.7 s and was used instead. Re-check this
+tradeoff if you change models (see `05_LLM_PROMPT_AND_TEST_NOTES.md` §1).
 
 ## Quickstart (local, Python 3.12)
 ```bash
@@ -68,27 +73,43 @@ curl -s -X POST http://localhost:8000/optimize-energy \
 ```bash
 python tests/run_samples.py http://localhost:8000 tests/public_samples.json
 ```
-`tests/public_samples.json` in this repo is a **self-authored local test set** (4 hand-built
-scenarios), not the organizers' official `Public_Sample_Cases.json` — that file was not part
-of this build pack. Replace it with the real one as soon as it is published, then re-run this
-command. Own wording only (see `05_LLM_PROMPT_AND_TEST_NOTES.md` §2.6 on not hard-coding
-public sample text into the prompt).
+`tests/public_samples.json` is the organizers' official public sample pack
+(`BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`, 10 cases).
 
-Actual local run (no LLM key configured, so every note went through the deterministic
-fallback parser and was still correctly interpreted and scored):
+Actual result, real Gemini interpreter in the loop (not the fallback parser):
 ```
 health: {'status': 'ok'}
-SAMPLE-01 interp=OK valid=OK cost_ratio=1.0000 0.02s
-SAMPLE-02 interp=OK valid=OK cost_ratio=1.0000 0.01s
-SAMPLE-03 interp=OK valid=OK cost_ratio=1.0000 0.01s
-SAMPLE-04 interp=OK valid=OK cost_ratio=1.0000 0.01s
+SAMPLE-01 interp=OK valid=OK cost_ratio=1.0000 1.36s
+SAMPLE-02 interp=OK valid=OK cost_ratio=1.0000 1.09s
+SAMPLE-03 interp=OK valid=OK cost_ratio=1.0000 1.10s
+SAMPLE-04 interp=OK valid=OK cost_ratio=1.0000 1.34s
+SAMPLE-05 interp=OK valid=OK cost_ratio=1.0000 1.09s
+SAMPLE-06 interp=OK valid=OK cost_ratio=1.0000 3.04s
+SAMPLE-07 interp=OK valid=OK cost_ratio=1.0000 1.26s
+SAMPLE-08 interp=OK valid=OK cost_ratio=1.0000 1.23s
+SAMPLE-09 interp=OK valid=OK cost_ratio=1.0000 1.36s
+SAMPLE-10 interp=OK valid=OK cost_ratio=1.0000 1.99s
 
-4/4 passed | p95 latency 0.01s
+10/10 passed | p95 latency 1.99s
 ```
-Once an `LLM_API_KEY` is configured, re-run `python tests/paraphrases.json` cases through
-`app.interpreter.interpret()` (20+ hand-written paraphrases covering the traps in
-`05_LLM_PROMPT_AND_TEST_NOTES.md` §3) to measure real interpretation accuracy — the fallback
-parser alone is deliberately weak on paraphrased wording; that is the LLM's job.
+The LP optimizer was separately verified against the reference directives directly (bypassing
+the LLM entirely, per the judge-style math check): all 10 cases reproduce the reference optimal
+cost exactly (cost diff 0.0000) with zero replay violations.
+**Actual paraphrase-set result with `gemini-3.5-flash-lite`: 23/23 (100%), avg latency 1.18 s,
+max 1.41 s** (paced under the free-tier rate limit — see Known limitations below). Run it
+yourself with:
+```bash
+python -c "
+import asyncio, json
+from app.interpreter import interpret
+cases = json.load(open('tests/paraphrases.json'))
+async def main():
+    for c in cases:
+        out = await interpret([c['note']], 200)
+        print(out[0]['directive_type'], out[0]['structured_adjustment'])
+asyncio.run(main())
+"
+```
 
 ## Docker fallback
 ```bash
@@ -146,15 +167,22 @@ Sample response fragment (from the local run above, fallback-parser path):
 ```
 
 ## Dependencies and credits
-FastAPI, Uvicorn, Pydantic, httpx, NumPy, SciPy (HiGHS). LLM: `<provider>`.
+FastAPI, Uvicorn, Pydantic, httpx, NumPy, SciPy (HiGHS). LLM: Google Gemini.
 AI coding assistants used: `<tools>` — architecture and logic reviewed and owned by the team.
 
 ## Known limitations
-- Interpretation quality depends on the external LLM; if all providers fail, a limited regex fallback is used and flagged in `explanation`.
+- **The Gemini key currently configured is on the free tier: 15 requests/minute for
+  `gemini-3.5-flash-lite`.** Verified directly against the provider — the 11th call inside
+  60 s returns HTTP 429, which the app correctly downgrades to the labelled fallback parser
+  (never a 5xx), but that silently trades LLM-interpretation accuracy for availability during
+  a burst. **Before submission: either upgrade this key's project to a paid tier, or obtain
+  one that already has a higher limit**, and set `BACKUP_LLM_*` to a second provider — neither
+  is done yet in this repo's `.env`.
+- Interpretation quality depends on the external LLM; if all providers fail (or are
+  rate-limited), a limited regex fallback is used and flagged in `explanation`.
 - Windows that cross midnight are wrapped inside the same 0–23 horizon.
 - In-memory cache is per worker and cleared on restart.
 - A note implying two directive types at once is mapped to a single type.
-- `tests/public_samples.json` in this repo is self-authored, not the organizers' official sample file (not provided in this build pack).
 
 ## Secret handling
 Secrets are read from environment variables only. `.env` is git- and docker-ignored.
