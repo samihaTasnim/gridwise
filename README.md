@@ -1,9 +1,10 @@
 # GridWise LLM — Smart Campus Energy Optimizer
-BUP CSE Fest 2026 Hackathon · Online Preliminary · Team `<team name>`
+BUP CSE Fest 2026 Hackathon · Online Preliminary · Team **TODO: team name**
 
-**Live endpoint:** `https://<fill in after deploy — see 06_DEPLOYMENT_AND_OPS.md>`
-**Docker image:** `ghcr.io/<user>/gridwise:1.0.0`
-**Video:** `<link>`
+**Live endpoint:** TODO — not yet deployed
+**Docker image:** `ghcr.io/samihatasnim/gridwise:1.0.0` (linux/amd64)
+**Repository:** https://github.com/samihaTasnim/gridwise
+**Video:** TODO — not yet recorded
 
 ## What it does
 Accepts a 24-hour campus energy scenario plus 1–3 natural-language operator notes.
@@ -33,7 +34,7 @@ tradeoff if you change models (see `05_LLM_PROMPT_AND_TEST_NOTES.md` §1).
 
 ## Quickstart (local, Python 3.12)
 ```bash
-git clone https://github.com/<user>/<repo>.git && cd <repo>
+git clone https://github.com/samihaTasnim/gridwise.git && cd gridwise
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # then fill in the values
@@ -113,18 +114,18 @@ asyncio.run(main())
 
 ## Docker fallback
 ```bash
-docker pull ghcr.io/<user>/gridwise:1.0.0
+docker pull ghcr.io/samihatasnim/gridwise:1.0.0
 docker run --rm -p 8000:8000 \
   -e LLM_BASE_URL=<url> -e LLM_MODEL=<model> -e LLM_API_KEY=<key> \
-  ghcr.io/<user>/gridwise:1.0.0
+  ghcr.io/samihatasnim/gridwise:1.0.0
 curl -s http://localhost:8000/health
 ```
 Port 8000, binds 0.0.0.0, no secrets in the image. `/health` works without any variables set.
 
 Build and publish (see `06_DEPLOYMENT_AND_OPS.md` for the full checklist):
 ```bash
-docker build -t ghcr.io/<user>/gridwise:1.0.0 .
-docker push ghcr.io/<user>/gridwise:1.0.0     # then set the package to Public in registry settings
+docker build -t ghcr.io/samihatasnim/gridwise:1.0.0 .
+docker push ghcr.io/samihatasnim/gridwise:1.0.0     # then set the package to Public in registry settings
 ```
 
 **Verified locally**, mirroring the judges' key-less Docker check:
@@ -146,7 +147,17 @@ environment is x86_64.
 `GET /health` → `200 {"status":"ok"}`
 `POST /optimize-energy` → `200` result · `400` malformed/invalid request · `422` infeasible scenario · `500` controlled internal error.
 
-Sample response fragment (from the local run above, fallback-parser path):
+Real response for official public sample SAMPLE-01, produced by the Gemini interpreter
+(`hourly_plan` abridged to 2 of its 24 rows). Note 0 is an applicable directive; note 1 is a
+distractor the model correctly returns as `no_op`:
+
+**Request notes:**
+```json
+["Facilities will wash the rooftop solar panels from noon until 2 PM. During cleaning, usable solar should be treated as roughly 25% of the forecast.",
+ "The sports office moved next month's registration deadline."]
+```
+
+**Response:**
 ```json
 {
   "scenario_id": "SAMPLE-01",
@@ -155,20 +166,32 @@ Sample response fragment (from the local run above, fallback-parser path):
       "note_index": 0,
       "applies": true,
       "directive_type": "solar_reduction",
-      "structured_adjustment": {"hours": [11, 12, 13], "factor": 0.2},
-      "explanation": "LLM unavailable; deterministic fallback parser used."
+      "structured_adjustment": {"hours": [12, 13], "factor": 0.25},
+      "explanation": "Rooftop solar cleaning reduces usable solar output to 25% of forecast from noon to 2 PM today."
+    },
+    {
+      "note_index": 1,
+      "applies": false,
+      "directive_type": "no_op",
+      "structured_adjustment": null,
+      "explanation": "Note refers to a registration deadline next month, which is unrelated to today's energy operations."
     }
   ],
-  "total_grid_kwh": 1067.0,
-  "total_cost_bdt": 7166.0,
-  "peak_grid_kwh": 101.0,
-  "plan_summary": "Applied 1 operator directive(s) (solar_reduction); battery charges in low-tariff/solar-surplus hours and discharges in high-tariff hours, returning to its initial energy. Total cost 7166.00 BDT."
+  "hourly_plan": [
+    {"hour": 0, "grid_kwh": 40.0, "solar_used_kwh": 0.0, "battery_action": "discharge", "battery_kwh": 50.0, "battery_energy_after_kwh": 60.0},
+    {"hour": 1, "grid_kwh": 95.0, "solar_used_kwh": 0.0, "battery_action": "charge", "battery_kwh": 10.0, "battery_energy_after_kwh": 70.0}
+  ],
+  "total_grid_kwh": 2692.5,
+  "total_cost_bdt": 38365.0,
+  "peak_grid_kwh": 187.5,
+  "plan_summary": "Applied 1 operator directive(s) (solar_reduction); battery charges in low-tariff/solar-surplus hours and discharges in high-tariff hours, returning to its initial energy. Total cost 38365.00 BDT."
 }
 ```
+`total_cost_bdt` here (38365.0) matches the organizers' reference optimal cost for SAMPLE-01 exactly.
 
 ## Dependencies and credits
 FastAPI, Uvicorn, Pydantic, httpx, NumPy, SciPy (HiGHS). LLM: Google Gemini.
-AI coding assistants used: `<tools>` — architecture and logic reviewed and owned by the team.
+AI coding assistants used: Claude Code (Anthropic) — architecture and logic reviewed and owned by the team.
 
 ## Known limitations
 - **The Gemini key currently configured is on the free tier: 15 requests/minute for
